@@ -10,6 +10,7 @@ import java.lang.RuntimeException
 import kotlin.Exception
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import kotlin.system.measureTimeMillis
 
 @InternalCoroutinesApi
 class MainActivity : AppCompatActivity() {
@@ -23,34 +24,39 @@ class MainActivity : AppCompatActivity() {
         //managingJobsHierarchy()
         //childCancellation()
         //cooperativeCancellation()
+        //coroutineCancellationCanNotInterruptThread()
+        //coroutineCancellationUseDelaySuspendFun()
         //usingReplay()
         //postingToTheUIThread()
-        timeout()
+        //timeout()
 
         /* suspend */
+        //composingSuspendingFunctions()
+        //asyncStyleFunction()
+        structuredConcurrencyWithAsync()
         //suspendWithCancellable()
         //trySuspendCancellableCoroutine()
-        //trySuspendCancellableCoroutineWithCancellation()
+        //suspendWithCancellableAndSuspendCancellation()
     }
 
     /**
-            public fun CoroutineScope.launch(
-                context: CoroutineContext = EmptyCoroutineContext,
-                start: CoroutineStart = CoroutineStart.DEFAULT,
-                block: suspend CoroutineScope.() -> Unit
-            ): Job
+    public fun CoroutineScope.launch(
+    context: CoroutineContext = EmptyCoroutineContext,
+    start: CoroutineStart = CoroutineStart.DEFAULT,
+    block: suspend CoroutineScope.() -> Unit
+    ): Job
 
-            -   A CoroutineContext is a persistent dataset of contextual information about
-                the current coroutine. This can contain objects like the Job and Dispatcher
-                of the coroutine, both of which you will touch on later. Since you haven’t
-                specified anything in the snippet above, it will use the EmptyCoroutineContext,
-                which points to whatever context the specified CoroutineScope uses
+    -   A CoroutineContext is a persistent dataset of contextual information about
+    the current coroutine. This can contain objects like the Job and Dispatcher
+    of the coroutine, both of which you will touch on later. Since you haven’t
+    specified anything in the snippet above, it will use the EmptyCoroutineContext,
+    which points to whatever context the specified CoroutineScope uses
 
-            -   The CoroutineStart is the mode in which you can start a coroutine. Options are:
-                • DEFAULT: Immediately schedules a coroutine for execution according to its context.
-                • LAZY: Starts coroutine lazily.
-                • ATOMIC: Same as DEFAULT but cannot be cancelled before it starts.
-                • UNDISPATCHED: Runs the coroutine until its first suspension point.
+    -   The CoroutineStart is the mode in which you can start a coroutine. Options are:
+    • DEFAULT: Immediately schedules a coroutine for execution according to its context.
+    • LAZY: Starts coroutine lazily.
+    • ATOMIC: Same as DEFAULT but cannot be cancelled before it starts.
+    • UNDISPATCHED: Runs the coroutine until its first suspension point.
 
      **/
     fun launch10000Coroutines() {
@@ -237,6 +243,49 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    fun coroutineCancellationCanNotInterruptThread() {
+        runBlocking {
+            println("launching")
+            try {
+                withTimeout(1000) {
+                    withContext(Dispatchers.IO) {
+                        println("sleeping")
+                        // coroutine could not cancel / interrupt the Thread https://discuss.kotlinlang.org/t/calling-blocking-code-in-coroutines/2368/5, so
+                        // the coroutine wait for the Thread until finish, then return the result of exception
+                        Thread.sleep(2000)
+                        println("after sleeping")
+                    }
+                }
+            } catch (e: TimeoutCancellationException) {
+                println("Time out: $e")
+            }
+        }
+    }
+
+    fun coroutineCancellationUseDelaySuspendFun() {
+        runBlocking {
+            println("launching")
+            launch {
+                try {
+                    withTimeout(1000) {
+                        withContext(Dispatchers.IO) {
+                            println("sleeping")
+                            // coroutine could not cancel / interrupt the Thread https://discuss.kotlinlang.org/t/calling-blocking-code-in-coroutines/2368/5, so
+                            // the coroutine wait for the Thread until finish, then return the result of exception
+                            delay(2000)
+                            println("after sleeping") // this code won't ever be executed if the coroutine is cancelled by the timeout
+                        }
+                    }
+                    println("Test after timeout") // this code won't ever be executed if the coroutine is cancelled by the timeout
+                } catch (e: TimeoutCancellationException) {
+                    println("Time out: $e")
+                } finally {
+                    work() // still can be executed, since only the withTimeout which is cancelled
+                }
+            }
+        }
+    }
+
     fun usingReplay() {
         var isDoorOpen = false
 
@@ -288,6 +337,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun timeout() {
+        var r: Resource? = null
         runBlocking {
             try {
                 println("=== using timeout for cancellation after x seconds")
@@ -312,30 +362,184 @@ class MainActivity : AppCompatActivity() {
             println("Result is $result")
 
             println("\n\n=== timeout is async and resources")
-            var r = Resource()
-            repeat(100_000) {
+            r = Resource()
+            repeat(10_000) {
+                println("$it iteration outer block")
                 launch {
-                    val resource = withTimeout(60) { // delay 60 ms
-                        delay(50) // delay 50 ms
-                        r.allocate()
+                    println("$it iteration launch block")
+                    val resource = withTimeout(1000) { // delay 1000 ms
+                        println("-> before delay")
+                        delay(90) // delay 90 ms
+                        println("-> after delay 90 ms")
+                        r?.allocate()
                         r
                     }
-                    resource.close()
+                    resource?.close()
                 }
             }
-            println("final acquired: ${r.acquired}")
+        }
+        println("final acquired: ${r?.acquired}")
+    }
+
+
+    /**
+     * Composing suspending functions
+     * */
+    private suspend fun doSomethingOne(): Int {
+        delay(1000L) // pretend do something useful
+        println("-> success do something one")
+        return 13
+    }
+
+    private suspend fun doSomethingTwo(): Int {
+        delay(500L) // pretend do something useful
+        println("-> success do something two")
+        return 29
+    }
+
+    private fun composingSuspendingFunctions() {
+        runBlocking {
+            // assumes the doSomethingOne is the dependency to decide whether to run doSomethingTwo or not
+            val time = measureTimeMillis {
+                val one = doSomethingOne()
+                val two = doSomethingTwo()
+                println("The answer is ${one + two}")
+            }
+            println("Completed in $time millis")
+
+            // assumes there are no dependencies between doSomethingOne() and doSomethingTwo() and want to get answer
+            // faster by doing concurrently
+            val time2 = measureTimeMillis {
+                val one = async { doSomethingOne() }
+                val two = async { doSomethingTwo() }
+                println("The answer is ${one.await() + two.await()}")
+            }
+            println("Completed in $time2 ms")
+
+            // start async lazy, only. It only starts the coroutine when its result is required by await, or
+            // if its Job 's start function is invoked
+            val time3 = measureTimeMillis {
+                val one = async(start = CoroutineStart.LAZY) { doSomethingOne() }
+                val two = async(start = CoroutineStart.LAZY) { doSomethingTwo() }
+                // some computation
+                one.start()
+                two.start()
+                println("The answer is ${one.await() + two.await()}")
+            }
+            println("Completed in $time3 ms")
+
+            // async lazy not calling start() will make both suspend async function sequentially executed which is not the intended behaviour
+            val time4 = measureTimeMillis {
+                val one = async(start = CoroutineStart.LAZY) { doSomethingOne() }
+                val two = async(start = CoroutineStart.LAZY) { doSomethingTwo() }
+                // some computation
+                //one.start()
+                //two.start()
+                println("The answer is ${one.await() + two.await()}")
+            }
+            println("Completed in $time4 ms")
+        }
+    }
+
+    /**
+     * Async-style functions
+     * */
+
+    // below are not suspending functions
+    private fun somethingUsefulOneAsync() = GlobalScope.async {
+        doSomethingOne()
+    }
+
+    private fun somethingUsefulTwoAsync() = GlobalScope.async {
+        doSomethingTwo()
+    }
+
+    private fun asyncStyleFunction() {
+        val time = measureTimeMillis {
+            // initiate async actions outside of a coroutine
+            val one = somethingUsefulOneAsync()
+            val two = somethingUsefulTwoAsync()
+            // but waiting for a result must involve either suspending or blocking.
+            // here we use `runBlocking { ... }` to block the main thread while waiting for the result
+            runBlocking {
+                println("The answer is ${one.await() + two.await()}")
+            }
+        }
+        println("Completed in $time ms")
+
+        // using run blocking as a root coroutine scope builder
+        runBlocking {
+            val time = measureTimeMillis {
+                // initiate async actions outside of a coroutine
+                val one = somethingUsefulOneAsync()
+                val two = somethingUsefulTwoAsync()
+                println("The answer is ${one.await() + two.await()}")
+            }
+            println("Completed in $time ms")
+        }
+
+        // Simulate error and throws an exception between async function and the await() call.
+        runBlocking {
+            try {
+                val time = measureTimeMillis {
+                    // The async function still running in the background, even though the operation that initiated it
+                    // was aborted
+                    val one = somethingUsefulOneAsync()
+                    val two = somethingUsefulTwoAsync()
+                    throw RuntimeException("sammple error")
+                    println("The answer is ${one.await() + two.await()}")
+                }
+                println("Completed in $time ms")
+            } catch (e: Exception) {
+                Log.e(this@MainActivity::class.java.simpleName, "error exception: $e")
+            }
+        }
+    }
+
+    /**
+     * Structured concurrency with async
+     * */
+    private suspend fun concurrentSum(): Int = coroutineScope {
+        val one = async<Int> {
+            try {
+                delay(Long.MAX_VALUE) // Emulates very long computation
+                42
+            } finally {
+                println("First child was cancelled")
+            }
+        }
+        val two = async<Int> {
+            println("Second child throws an exception")
+            throw ArithmeticException()
+        }
+        one.await() + two.await()
+    }
+
+    private fun structuredConcurrencyWithAsync() {
+        // This way, if something goes wrong inside the code of the concurrentSum function,
+        // and it throws an exception, all the coroutines that were launched in its scope will
+        // be cancelled.
+        runBlocking {
+            try {
+                val time = measureTimeMillis {
+                    println("The answer is ${concurrentSum()}")
+                }
+                println("Completed in $time ms")
+            } catch (e: ArithmeticException) {
+                println("Computation failed with ArithmeticException")
+            }
         }
     }
 
     /**
      * suspend with cancellable
      * */
-    private suspend fun work(){
+    private suspend fun work() {
         val startTime = System.currentTimeMillis()
         var nextPrintTime = startTime
         var i = 0
-        while (i < 5) {
-            yield()
+        while (i < 1000) {
+            yield() // to make this suspend function cancellable
             // print a message twice a second
             if (System.currentTimeMillis() >= nextPrintTime) {
                 println("Hello ${i++}")
@@ -369,6 +573,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun suspendWithCancellableAndSuspendCancellation() {
         runBlocking {
+            println("=== catch cancellation exception ===")
             val job = launch {
                 try {
                     work()
@@ -389,6 +594,23 @@ class MainActivity : AppCompatActivity() {
             println("Cancel!")
             job.cancel()
             println("Done!")
+
+            // below snippet will not get CancellationException and will continue the work, since the try catch
+            // block is outside of the launch block
+            println("=== try catch outside launch ===")
+            try {
+                val job2 = launch {
+                    work()
+                }
+                delay(1000L)
+                println("Batalkan!")
+                job2.cancel()
+                println("Selesai!")
+            } catch (e: CancellationException) {
+                Log.e("Coba suspend", e.message, e)
+            } finally {
+                println("Bersihkan!")
+            }
         }
     }
 
@@ -444,22 +666,23 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
-    private suspend fun fetchUserWithCancellation(): User = suspendCancellableCoroutine { cancellableContinuation ->
-        fetchUserFromNetwork(object : Callback {
-            override fun onSuccess(user: User) {
-                cancellableContinuation.resume(user)
-            }
+    private suspend fun fetchUserWithCancellation(): User =
+        suspendCancellableCoroutine { cancellableContinuation ->
+            fetchUserFromNetwork(object : Callback {
+                override fun onSuccess(user: User) {
+                    cancellableContinuation.resume(user)
+                }
 
-            override fun onFailure(exception: Exception) {
-                cancellableContinuation.resumeWithException(exception)
-            }
-        })
+                override fun onFailure(exception: Exception) {
+                    cancellableContinuation.resumeWithException(exception)
+                }
+            })
 
-        // We call "continuation.cancel()" to cancel this suspend function
-        cancellableContinuation.cancel()
+            // We call "continuation.cancel()" to cancel this suspend function
+            cancellableContinuation.cancel()
 
-        println("After cancellation inside suspend ")
-    }
+            println("After cancellation inside suspend ")
+        }
 
     private fun fetchUserFromNetwork(callback: Callback) {
         Thread {
@@ -480,6 +703,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateUser(user: User) {
-        Toast.makeText(this, "User name: ${user.name} and address: ${user.address}", Toast.LENGTH_SHORT).show()
+        Toast.makeText(
+            this,
+            "User name: ${user.name} and address: ${user.address}",
+            Toast.LENGTH_SHORT
+        ).show()
     }
 }
