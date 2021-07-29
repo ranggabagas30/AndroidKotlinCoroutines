@@ -21,7 +21,7 @@ class MainActivity : AppCompatActivity() {
         //launch10000Coroutines()
         //usingDelay()
         //dependentJobs()
-        //managingJobsHierarchy()
+        managingJobsHierarchy()
         //childCancellation()
         //cooperativeCancellation()
         //coroutineCancellationCanNotInterruptThread()
@@ -33,7 +33,7 @@ class MainActivity : AppCompatActivity() {
         /* suspend */
         //composingSuspendingFunctions()
         //asyncStyleFunction()
-        structuredConcurrencyWithAsync()
+        //structuredConcurrencyWithAsync()
         //suspendWithCancellable()
         //trySuspendCancellableCoroutine()
         //suspendWithCancellableAndSuspendCancellation()
@@ -103,28 +103,28 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun managingJobsHierarchy() {
-        with(GlobalScope) {
+        with(MainScope()) {
             val parentJob = launch {
-                delay(300)
-                println("I'm the parent")
-                delay(300)
+                try {
+                    println("I'm the parent")
+                    delay(350)
+                    this.cancel() // will cancel parent and all children jobs
+                } catch (e: CancellationException) {
+                    println("parent cancellation: ${e.message}")
+                }
             }
             val job1 = launch(context = parentJob) {
-                delay(200)
+                delay(300)
                 println("I'm the first child")
-                delay(200)
             }
             val job2 = launch(context = parentJob) {
-                delay(200)
+                delay(300)
                 println("I'm the second child")
-                delay(200)
             }
             val job3 = launch(context = parentJob) {
-                delay(200)
+                delay(300)
                 println("I'm the third child")
-                delay(200)
             }
-            //parentJob.cancel(null) // will cancel parent and all children jobs
             // job1, job2, and job3 are siblings to each other
             // job1.cancel() will not make other sibling jobs cancelled
             parentJob.children.forEach {
