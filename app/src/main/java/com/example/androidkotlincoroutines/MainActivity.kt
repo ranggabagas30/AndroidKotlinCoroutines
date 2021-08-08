@@ -118,7 +118,7 @@ class MainActivity : AppCompatActivity() {
             val parentJob2 = launch {
                 launch {
                     for (i in 0..5) {
-                        println("parentJob1, child work $i")
+                        println("parentJob2, child work $i")
                     }
                 }
             }
@@ -141,7 +141,7 @@ class MainActivity : AppCompatActivity() {
             val parentJob2 = launch {
                 launch {
                     for (i in 0..5) {
-                        println("parentJob1, child work $i")
+                        println("parentJob2, child work $i")
                     }
                 }
             }
