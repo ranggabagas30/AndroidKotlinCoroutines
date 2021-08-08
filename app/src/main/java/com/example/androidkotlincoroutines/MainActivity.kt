@@ -29,9 +29,10 @@ class MainActivity : AppCompatActivity() {
         /* basic */
         //launch10000Coroutines()
         //usingDelay()
+        //joinFunction()
         //dependentJobs()
         //managingJobsHierarchy()
-        childCancellation()
+        //childCancellation()
         //cooperativeCancellation()
         //coroutineCancellationCanNotInterruptThread()
         //coroutineCancellationUseDelaySuspendFun()
@@ -98,6 +99,54 @@ class MainActivity : AppCompatActivity() {
             println("Right back at ya!")
         }
         Thread.sleep(1000)
+    }
+
+    private fun joinFunction() {
+        GlobalScope.launch {
+            println("parentJob1 Coroutine start")
+            val parentJob1 = launch {
+                launch {
+                    for (i in 0..5) {
+                        println("parentJob1, child work $i")
+                    }
+                }
+            }
+            parentJob1.join()
+            println("parentJob1 Coroutine end")
+
+            println("parentJob2 Coroutine start")
+            val parentJob2 = launch {
+                launch {
+                    for (i in 0..5) {
+                        println("parentJob1, child work $i")
+                    }
+                }
+            }
+            println("parentJob2 Coroutine end")
+        }
+
+        // without using join()
+        GlobalScope.launch {
+            println("parentJob1 Coroutine start")
+             val parentJob1 = launch {
+                launch {
+                    for (i in 0..5) {
+                        println("parentJob1, child work $i")
+                    }
+                }
+            }
+            println("parentJob1 Coroutine end")
+
+            println("parentJob2 Coroutine start")
+            val parentJob2 = launch {
+                launch {
+                    for (i in 0..5) {
+                        println("parentJob1, child work $i")
+                    }
+                }
+            }
+            println("parentJob2 Coroutine end")
+        }
     }
 
     // Job.join suspends a coroutine until the work is completed
@@ -190,6 +239,7 @@ class MainActivity : AppCompatActivity() {
 
     @InternalCoroutinesApi
     fun childCancellation() {
+
         // simple example
         runBlocking {
             val job = GlobalScope.launch {
@@ -205,35 +255,34 @@ class MainActivity : AppCompatActivity() {
             println("main: Now I can quit")
         }
 
-        GlobalScope.launch {
-            val parentJob = launch {
-                println("Job1...")
-                val job1 = launch {
+        val parentScope = GlobalScope.launch {
+            val job1 = launch {
+                println("first child job work 1")
+                val job2 = launch {
                     for (i in 0..5) {
                         delay(100)
-                        println("Job1, work $i")
+                        println("second child job work $i")
                     }
                 }
                 delay(300)
-                println("Job1 is cancelled?: ${job1.isCancelled}")
-                job1.cancelAndJoin()
-                println("Job1 is cancelled?: ${job1.isCancelled}")
-
-                println("Job2...")
-                val job2 = launch {
+                println("Job2 is cancelled?: ${job2.isCancelled}")
+                job2.cancelAndJoin()
+                println("Job2 is cancelled?: ${job2.isCancelled}")
+                println("first child job work 2")
+                val job3 = launch {
                     for (i in 0..5) {
                         if (isActive && i == 3) {
                             cancel()
                         }
                         delay(100)
-                        println("Job2, work $i")
+                        println("third child job work $i")
                     }
                 }
                 delay(1000)
-                println("Job2 is cancelled?: ${job2.isCancelled}")
+                println("Job3 is cancelled?: ${job3.isCancelled}")
             }
             delay(2000)
-            println("parentJob is cancelled?: ${parentJob.isCancelled}")
+            println("Job1 is canclled?: ${job1.isCancelled}")
         }
         Thread.sleep(3000)
     }
