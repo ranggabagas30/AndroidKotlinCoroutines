@@ -6,8 +6,9 @@ import android.util.Log
 import android.widget.Toast
 import com.example.androidkotlincoroutines.model.User
 import kotlinx.coroutines.*
-import java.lang.RuntimeException
 import kotlin.Exception
+import kotlin.RuntimeException
+import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.system.measureTimeMillis
@@ -18,11 +19,19 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        /**
+         * References :
+         * - https://kotlinlang.org/docs
+         * - https://github.com/Kotlin/kotlinx.coroutines/blob/master/ui/coroutines-guide-ui.md
+         *
+         * */
+
+        /* basic */
         //launch10000Coroutines()
         //usingDelay()
         //dependentJobs()
-        managingJobsHierarchy()
-        //childCancellation()
+        //managingJobsHierarchy()
+        childCancellation()
         //cooperativeCancellation()
         //coroutineCancellationCanNotInterruptThread()
         //coroutineCancellationUseDelaySuspendFun()
@@ -37,6 +46,15 @@ class MainActivity : AppCompatActivity() {
         //suspendWithCancellable()
         //trySuspendCancellableCoroutine()
         //suspendWithCancellableAndSuspendCancellation()
+
+        /* coroutine context and dispatchers */
+        //manipulateContext()
+        //dispatcherExamples()
+
+        /* flows */
+//        with(KotlinFlow) {
+//            tryFlow()
+//        }
     }
 
     /**
@@ -99,7 +117,7 @@ class MainActivity : AppCompatActivity() {
             delay(200)
         }
         Log.d(this::dependentJobs.name, "job1 is completed? ${job1.isCompleted}")
-        Thread.sleep(1000)
+        //Thread.sleep(1000)
     }
 
     fun managingJobsHierarchy() {
@@ -140,11 +158,38 @@ class MainActivity : AppCompatActivity() {
             }
             Thread.sleep(1000)
         }
+
+        // second example
+        // parent cancellation, all of its children are getting cancelled
+        GlobalScope.launch {
+            val parentJob = launch {
+                println("job1...")
+                val job1 = launch {
+                    for (i in 0..5) {
+                        delay(100)
+                        println("job1, work $i")
+                    }
+                }
+
+                println("job2...")
+                val job2 = launch {
+                    for (i in 0..5) {
+                        delay(100)
+                        println("job2, work $i")
+                    }
+                }
+                delay(1000)
+                println("Job2 is cancelled?: ${job2.isCancelled}")
+            }
+            delay(300)
+            parentJob.cancel()
+            delay(500)
+            println("Job1 is cancelled?: ${parentJob.isCancelled}")
+        }
     }
 
     @InternalCoroutinesApi
     fun childCancellation() {
-
         // simple example
         runBlocking {
             val job = GlobalScope.launch {
@@ -160,34 +205,35 @@ class MainActivity : AppCompatActivity() {
             println("main: Now I can quit")
         }
 
-        val parentScope = GlobalScope.launch {
-            val job1 = launch {
-                println("first child job work 1")
-                val job2 = launch {
+        GlobalScope.launch {
+            val parentJob = launch {
+                println("Job1...")
+                val job1 = launch {
                     for (i in 0..5) {
                         delay(100)
-                        println("second child job work $i")
+                        println("Job1, work $i")
                     }
                 }
                 delay(300)
-                println("Job2 is cancelled?: ${job2.isCancelled}")
-                job2.cancelAndJoin()
-                println("Job2 is cancelled?: ${job2.isCancelled}")
-                println("first child job work 2")
-                val job3 = launch {
+                println("Job1 is cancelled?: ${job1.isCancelled}")
+                job1.cancelAndJoin()
+                println("Job1 is cancelled?: ${job1.isCancelled}")
+
+                println("Job2...")
+                val job2 = launch {
                     for (i in 0..5) {
                         if (isActive && i == 3) {
                             cancel()
                         }
                         delay(100)
-                        println("third child job work $i")
+                        println("Job2, work $i")
                     }
                 }
                 delay(1000)
-                println("Job3 is cancelled?: ${job3.isCancelled}")
+                println("Job2 is cancelled?: ${job2.isCancelled}")
             }
             delay(2000)
-            println("Job1 is canclled?: ${job1.isCancelled}")
+            println("parentJob is cancelled?: ${parentJob.isCancelled}")
         }
         Thread.sleep(3000)
     }
@@ -708,5 +754,66 @@ class MainActivity : AppCompatActivity() {
             "User name: ${user.name} and address: ${user.address}",
             Toast.LENGTH_SHORT
         ).show()
+    }
+
+    /**
+     * Coroutine Context and Dispatchers
+     * */
+    private fun manipulateContext() {
+        /*
+        * The notable design here is that an instance of Element is a singleton CoroutineContext by itself.
+        * Hence, we can easily create a new context by adding an element to a context
+        * */
+        val context = EmptyCoroutineContext
+        val newContext = context + CoroutineName("rangga")
+        println("is newContext != context? ${newContext != context}")
+        println("is 'rangga' == newContext name? ${"rangga" == newContext[CoroutineName]!!.name}")
+
+        /*
+        * Or we can remove an element from a CoroutineContext by calling CoroutineContext#minusKey
+        * */
+        val newContext2 = newContext.minusKey(CoroutineName)
+        println("is newContext2 != newContext? ${newContext2 != newContext}")
+        println("is newContext2 != context? ${newContext2 != context}")
+    }
+
+    @ObsoleteCoroutinesApi
+    private fun dispatcherExamples() {
+//        runBlocking {
+//            println("runBlocking working in thread ${Thread.currentThread().name}")
+//            launch(Dispatchers.Unconfined) {
+//                println("Unconfined : I'm working in thread ${Thread.currentThread().name}")
+//                delay(500) // run in thread kotlinx.coroutines.DefaultExecutor
+//                println("Unconfined : After delay in thread ${Thread.currentThread().name}") // Unconfined will also run in the thread in which delay is executed
+//            }
+//            launch {
+//                println("main runBlocking : I'm working in thread ${Thread.currentThread().name}")
+//                delay(500)
+//                println("main runBlocking : After delay in thread ${Thread.currentThread().name}")
+//            }
+//            launch(Dispatchers.Default) {
+//                println("Default : I'm working in thread ${Thread.currentThread().name}")
+//            }
+//            launch(newSingleThreadContext("MyOwnThread")) {
+//                println("newSingleThreadContext: I'm working in thread ${Thread.currentThread().name}")
+//            }
+//        }
+
+        runBlocking {
+            println("runBlocking2 working in thread ${Thread.currentThread().name}")
+            // using start = CoroutineStart.UNDISPATCHED and context = Dispatchers.DEFAULT
+            launch(start = CoroutineStart.UNDISPATCHED) {
+                println("CoroutineStart.UNDISPATCHED : working in thread ${Thread.currentThread().name}")
+                delay(500)
+                println("CoroutineStart.UNDISPATCHED : after delay in thread ${Thread.currentThread().name}")
+            }
+
+            // using start = CoroutineStart.DEFAULT and context = Dispatchers.Unconfined
+            launch(Dispatchers.Unconfined) {
+                println("Unconfined : I'm working in thread ${Thread.currentThread().name}")
+                delay(500) // run in thread kotlinx.coroutines.DefaultExecutor
+                println("Unconfined : After delay in thread ${Thread.currentThread().name}") // Unconfined will also run in the thread in which delay is executed
+            }
+        }
     }
 }
